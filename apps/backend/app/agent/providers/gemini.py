@@ -94,6 +94,10 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         if embedding_model == settings.EMBEDDING_MODEL or not embedding_model:
             embedding_model = "text-embedding-004"
         
+        # Ensure model name doesn't have "models/" prefix for URL construction
+        if embedding_model.startswith("models/"):
+            embedding_model = embedding_model[7:]  # Remove "models/" prefix
+        
         self._model = embedding_model
         self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
