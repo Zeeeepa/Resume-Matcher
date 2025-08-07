@@ -22,9 +22,9 @@ class GeminiProvider(Provider):
         if not self.api_key:
             raise ProviderError("Gemini API key is missing")
         
-        # Default to gemini-1.5-flash if no model specified
+        # Default to gemini-2.0-flash-exp if no model specified (upgraded to 2.5 Pro equivalent)
         if model_name == settings.LL_MODEL or not model_name:
-            model_name = "gemini-1.5-flash"
+            model_name = "gemini-2.0-flash-exp"
         
         self.model_name = model_name
         self.opts = opts
@@ -51,6 +51,10 @@ class GeminiProvider(Provider):
         }
         
         url = f"{self.base_url}/models/{self.model_name}:generateContent"
+        
+        # Debug logging
+        logger.debug(f"Making request to URL: {url}")
+        logger.debug(f"API key present: {'Yes' if self.api_key else 'No'}")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
@@ -101,6 +105,10 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
         }
         
         url = f"{self.base_url}/models/{self._model}:embedContent"
+        
+        # Debug logging
+        logger.debug(f"Making embedding request to URL: {url}")
+        logger.debug(f"API key present: {'Yes' if self.api_key else 'No'}")
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
