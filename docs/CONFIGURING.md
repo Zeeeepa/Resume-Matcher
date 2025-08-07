@@ -57,6 +57,21 @@ EMBEDDING_API_KEY. Then set
 (or whatever other OpenAI model ID's you want to use). You will need
 money in your OpenAI account
 
+## "gemini" provider
+
+You can also use Google's Gemini API by setting LLM_PROVIDER and/or 
+EMBEDDING_PROVIDER to "gemini". This uses Google's Gemini models which
+offer excellent performance and multimodal capabilities. In the .env file,
+you will need a Gemini API key (get one from https://aistudio.google.com/):
+
+    LLM_PROVIDER="gemini"
+    EMBEDDING_PROVIDER="gemini"
+    GEMINI_API_KEY="your-api-key-here"
+    LL_MODEL="gemini-pro"
+    EMBEDDING_MODEL="models/text-embedding-004"
+
+Available Gemini models include gemini-pro, gemini-1.5-pro, gemini-1.5-flash, etc.
+
 ## LlamaIndex providers
 
 The third option for LLM_PROVIDER is really a bunch of options. You
