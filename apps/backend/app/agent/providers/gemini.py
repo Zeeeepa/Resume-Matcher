@@ -1,8 +1,8 @@
 import os
+import json
 import logging
 from typing import Any, Dict
-
-import google.generativeai as genai
+import httpx
 from fastapi.concurrency import run_in_threadpool
 
 from ..exceptions import ProviderError
@@ -18,50 +18,20 @@ class GeminiProvider(Provider):
         if opts is None:
             opts = {}
         
-        api_key = api_key or settings.GEMINI_API_KEY or settings.LLM_API_KEY or os.getenv("GEMINI_API_KEY")
-        if not api_key:
+        self.api_key = api_key or settings.GEMINI_API_KEY or settings.LLM_API_KEY or os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
             raise ProviderError("Gemini API key is missing")
         
-        # Configure the Gemini API
-        genai.configure(api_key=api_key)
-        
-        # Default to gemini-1.5-flash if no model specified or if using default
+        # Default to gemini-2.0-flash-exp if no model specified (upgraded to 2.5 Pro equivalent)
         if model_name == settings.LL_MODEL or not model_name:
-            model_name = "gemini-1.5-flash"
+            model_name = "gemini-2.0-flash-exp"
         
         self.model_name = model_name
         self.opts = opts
-        
-        try:
-            self._model = genai.GenerativeModel(model_name)
-        except Exception as e:
-            raise ProviderError(f"Failed to initialize Gemini model '{model_name}': {e}") from e
-
-    def _generate_sync(self, prompt: str, options: Dict[str, Any]) -> str:
-        try:
-            # Configure generation parameters
-            generation_config = genai.types.GenerationConfig(
-                temperature=options.get("temperature", 0.0),
-                top_p=options.get("top_p", 0.9),
-                top_k=options.get("top_k", 40),
-                max_output_tokens=options.get("max_tokens", 8192),
-            )
-            
-            response = self._model.generate_content(
-                prompt,
-                generation_config=generation_config
-            )
-            
-            if not response.text:
-                raise ProviderError("Gemini returned empty response")
-            
-            return response.text
-            
-        except Exception as e:
-            raise ProviderError(f"Gemini - error generating response: {e}") from e
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
     async def __call__(self, prompt: str, **generation_args: Any) -> str:
-        # Merge opts with generation_args, with generation_args taking precedence
+        # Merge opts with generation_args
         options = {
             "temperature": self.opts.get("temperature", 0.0),
             "top_p": self.opts.get("top_p", 0.9),
@@ -70,41 +40,98 @@ class GeminiProvider(Provider):
         }
         options.update(generation_args)
         
-        return await run_in_threadpool(self._generate_sync, prompt, options)
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": options["temperature"],
+                "topP": options["top_p"],
+                "topK": options["top_k"],
+                "maxOutputTokens": options["max_tokens"]
+            }
+        }
+        
+        url = f"{self.base_url}/models/{self.model_name}:generateContent"
+        
+        # Debug logging
+        logger.debug(f"Making request to URL: {url}")
+        logger.debug(f"API key present: {'Yes' if self.api_key else 'No'}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    params={"key": self.api_key},
+                    headers={"Content-Type": "application/json"}
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if "candidates" in data and len(data["candidates"]) > 0:
+                    content = data["candidates"][0]["content"]["parts"][0]["text"]
+                    return content
+                else:
+                    raise ProviderError("No response from Gemini API")
+                    
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP {e.response.status_code}: {e.response.text}")
+                raise ProviderError(f"Gemini API HTTP {e.response.status_code}: {e.response.text}")
+            except httpx.RequestError as e:
+                logger.error(f"Request error: {e}")
+                raise ProviderError(f"Gemini API request error: {e}")
+            except Exception as e:
+                logger.error(f"Gemini API error: {e}")
+                raise ProviderError(f"Gemini API error: {e}")
 
 
 class GeminiEmbeddingProvider(EmbeddingProvider):
-    def __init__(
-        self,
-        api_key: str | None = None,
-        embedding_model: str = settings.EMBEDDING_MODEL,
-    ):
-        api_key = api_key or settings.GEMINI_API_KEY or settings.EMBEDDING_API_KEY or os.getenv("GEMINI_API_KEY")
-        if not api_key:
+    def __init__(self, api_key: str | None = None, embedding_model: str = settings.EMBEDDING_MODEL):
+        self.api_key = api_key or settings.GEMINI_API_KEY or settings.EMBEDDING_API_KEY or os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
             raise ProviderError("Gemini API key is missing")
         
-        # Configure the Gemini API
-        genai.configure(api_key=api_key)
-        
-        # Default to text-embedding-004 if no model specified or using default
+        # Default to text-embedding-004 if no model specified
         if embedding_model == settings.EMBEDDING_MODEL or not embedding_model:
-            embedding_model = "models/text-embedding-004"
+            embedding_model = "text-embedding-004"
         
         self._model = embedding_model
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta"
 
     async def embed(self, text: str) -> list[float]:
-        try:
-            response = await run_in_threadpool(
-                genai.embed_content,
-                model=self._model,
-                content=text,
-                task_type="retrieval_document"
-            )
-            
-            if not response or 'embedding' not in response:
-                raise ProviderError("Gemini returned invalid embedding response")
-            
-            return response['embedding']
-            
-        except Exception as e:
-            raise ProviderError(f"Gemini - error generating embedding: {e}") from e
+        payload = {
+            "model": f"models/{self._model}",
+            "content": {"parts": [{"text": text}]},
+            "taskType": "RETRIEVAL_DOCUMENT"
+        }
+        
+        url = f"{self.base_url}/models/{self._model}:embedContent"
+        
+        # Debug logging
+        logger.debug(f"Making embedding request to URL: {url}")
+        logger.debug(f"API key present: {'Yes' if self.api_key else 'No'}")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    params={"key": self.api_key},
+                    headers={"Content-Type": "application/json"}
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                if "embedding" in data and "values" in data["embedding"]:
+                    return data["embedding"]["values"]
+                else:
+                    raise ProviderError("Invalid embedding response from Gemini")
+                    
+            except httpx.HTTPStatusError as e:
+                logger.error(f"HTTP {e.response.status_code}: {e.response.text}")
+                raise ProviderError(f"Gemini embedding HTTP {e.response.status_code}: {e.response.text}")
+            except httpx.RequestError as e:
+                logger.error(f"Request error: {e}")
+                raise ProviderError(f"Gemini embedding request error: {e}")
+            except Exception as e:
+                logger.error(f"Gemini embedding error: {e}")
+                raise ProviderError(f"Gemini embedding error: {e}")
