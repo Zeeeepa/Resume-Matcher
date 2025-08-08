@@ -22,9 +22,9 @@ class GeminiProvider(Provider):
         if not self.api_key:
             raise ProviderError("Gemini API key is missing")
         
-        # Default to gemini-2.0-flash-exp if no model specified (upgraded to 2.5 Pro equivalent)
-        if model_name == settings.LL_MODEL or not model_name:
-            model_name = "gemini-2.0-flash-exp"
+        # Use the model from settings if no specific model provided
+        if not model_name:
+            model_name = settings.LL_MODEL
         
         self.model_name = model_name
         self.opts = opts
