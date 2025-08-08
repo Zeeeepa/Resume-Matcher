@@ -5,7 +5,11 @@ Simple test script to validate Gemini API integration
 import asyncio
 import os
 import sys
+import logging
 from pathlib import Path
+
+# Set up logging to see debug messages
+logging.basicConfig(level=logging.DEBUG)
 
 # Add the app directory to the Python path
 sys.path.insert(0, str(Path(__file__).parent / "app"))
@@ -19,7 +23,7 @@ async def test_gemini_llm():
     
     try:
         # Create agent manager with Gemini (using md strategy for simple text)
-        agent = AgentManager(model_provider="gemini", model="gemini-1.5-flash", strategy="md")
+        agent = AgentManager(model_provider="gemini", model=settings.LL_MODEL, strategy="md")
         
         # Test a simple prompt
         result = await agent.run("Hello! Please respond with a brief greeting.")
@@ -40,7 +44,7 @@ async def test_gemini_embedding():
         # Create embedding manager with Gemini
         embedding_manager = EmbeddingManager(
             model_provider="gemini", 
-            model="models/text-embedding-004"
+            model=settings.EMBEDDING_MODEL
         )
         
         # Test embedding generation
