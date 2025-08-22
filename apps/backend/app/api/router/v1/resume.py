@@ -260,3 +260,71 @@ async def get_resume(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error fetching resume data",
         )
+
+
+@resume_router.get(
+    "/{resume_id}/processed",
+    summary="Get processed resume data",
+)
+async def get_processed_resume(
+    request: Request,
+    resume_id: str,
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Retrieves processed resume data by resume_id.
+
+    Args:
+        resume_id: The ID of the resume to retrieve
+
+    Returns:
+        Processed resume data
+
+    Raises:
+        HTTPException: If the resume is not found or if there's an error fetching data.
+    """
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    headers = {"X-Request-ID": request_id}
+
+    try:
+        if not resume_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="resume_id is required",
+            )
+
+        resume_service = ResumeService(db)
+        resume_data = await resume_service.get_resume_with_processed_data(
+            resume_id=resume_id
+        )
+        
+        if not resume_data:
+            raise ResumeNotFoundError(
+                message=f"Resume with id {resume_id} not found"
+            )
+        
+        if not resume_data.get("processed_resume"):
+            raise ResumeNotFoundError(
+                message=f"Processed resume with id {resume_id} not found"
+            )
+
+        return JSONResponse(
+            content={
+                "request_id": request_id,
+                "data": resume_data["processed_resume"],
+            },
+            headers=headers,
+        )
+    
+    except ResumeNotFoundError as e:
+        logger.error(str(e))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Error fetching processed resume: {str(e)} - traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error fetching processed resume data",
+        )
